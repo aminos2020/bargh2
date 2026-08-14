@@ -3,7 +3,7 @@ import { Camera, CheckCircle2, UploadCloud, ImagePlus, ListPlus, Loader2, Plus, 
 import { useStore } from "../store";
 import type { PriceItem } from "../types";
 import { compressImage, faDigits, formatRial, jalaliLong, nav, todayJalali, uid } from "../lib/utils";
-import { Badge, Button, Card, Confirm, EmptyState, Modal, NumberStepper, PageHeader, SearchBar, Tabs, Textarea, cx, useToast } from "../components/ui";
+import { Badge, Button, Card, Confirm, EmptyState, Modal, NumberStepper, PageHeader, SearchBar, Select, Tabs, Textarea, cx, useToast } from "../components/ui";
 
 interface SelectedItem { priceItemId: string; quantity: number; }
 interface SelectedPhoto { fileName: string; dataUrl: string; size: number; }
@@ -60,12 +60,14 @@ function ItemPicker({ open, onClose, groupId, items, onAdd }: { open: boolean; o
 
 export default function ReportNewPage({ taskParam }: { taskParam?: string | null }) {
   const store = useStore();
-  const { user, userGroups, groupPriceItems, groupById, online, submitReport, db } = store;
+  const { user, userGroups, groupPriceItems, groupById, groupMembers, online, submitReport, db } = store;
   const toast = useToast();
   const groups = user ? userGroups(user.id) : [];
   const draftKey = user ? `tavanban-draft-${user.id}` : "";
+  const isSupervisor = user?.role === "GROUP_SUPERVISOR";
 
   const [groupId, setGroupId] = useState<string | null>(groups.length === 1 ? groups[0].id : null);
+  const [onBehalf, setOnBehalf] = useState("");
   const [description, setDescription] = useState("");
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [extras, setExtras] = useState<string[]>([]);
@@ -154,6 +156,7 @@ export default function ReportNewPage({ taskParam }: { taskParam?: string | null
     setSubmitting(true);
     setTimeout(() => {
       const res = submitReport({
+        userId: onBehalf || undefined,
         groupId,
         contractId: groupById(groupId)?.contractId || db.contracts[0]?.id || "",
         reportDateJ: `${todayJalali().jy}-${String(todayJalali().jm).padStart(2, "0")}-${String(todayJalali().jd).padStart(2, "0")}`,
@@ -226,6 +229,24 @@ export default function ReportNewPage({ taskParam }: { taskParam?: string | null
           />
         )}
       </Card>
+
+      {/* on-behalf (supervisor only) */}
+      {isSupervisor && (
+        <Card className="mb-4">
+          <p className="mb-2.5 text-[13px] font-black text-ink-700">ثبت به نام</p>
+          <Select
+            value={onBehalf}
+            onChange={setOnBehalf}
+            placeholder="به نام خودم (سرپرست)"
+            options={groupMembers(groupId || "")
+              .filter((m) => m.user.id !== user?.id && m.user.role === "TECHNICIAN" && m.user.isActive)
+              .map((m) => ({ value: m.user.id, label: m.user.fullName }))}
+          />
+          <p className="mt-2 text-[11.5px] font-bold leading-6 text-ink-300">
+            اگر کار را خودتان انجام داده‌اید، «به نام خودم» را رها کنید؛ در غیر این صورت گزارش به نام نیروی انتخابی ثبت و در رزومه‌ی او لحاظ می‌شود.
+          </p>
+        </Card>
+      )}
 
       {/* items */}
       <Card className="mb-4">

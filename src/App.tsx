@@ -152,7 +152,11 @@ function RoleRouter() {
       break;
     }
     case "GROUP_SUPERVISOR": {
+      showFab = ["home", "reviews", "group", "reports"].includes(page) && param !== "new";
       if (page === "home") content = <SupervisorHome />;
+      else if (page === "reports" && param === "new") content = <ReportNewPage />;
+      else if (page === "reports" && param) content = <ReviewDetail id={param} backPath="/supervisor/reports" />;
+      else if (page === "reports") content = <TechReports basePath="/supervisor/reports" />;
       else if (page === "reviews" && param) content = <ReviewDetail id={param} backPath="/supervisor/reviews" />;
       else if (page === "reviews") content = <ReviewsList scope="supervisor" title="تایید گزارش‌ها" subtitle="گزارش‌های گروه‌های تحت سرپرستی شما" />;
       else if (page === "tasks") content = <TasksBoard createRoles={[...CREATE_TASK_ROLES]} />;
@@ -202,7 +206,7 @@ function RoleRouter() {
   return (
     <AppShell
       page={parts.slice(1).join("/") || "home"}
-      fab={showFab ? { label: "گزارش سریع", icon: <Zap size={20} fill="currentColor" strokeWidth={1.5} />, onClick: () => nav("/technician/reports/new") } : undefined}
+      fab={showFab ? { label: "گزارش سریع", icon: <Zap size={20} fill="currentColor" strokeWidth={1.5} />, onClick: () => nav(session.role === "GROUP_SUPERVISOR" ? "/supervisor/reports/new" : "/technician/reports/new") } : undefined}
     >
       {content}
     </AppShell>

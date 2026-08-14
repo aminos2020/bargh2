@@ -101,26 +101,26 @@ export function TechHome() {
   );
 }
 
-export function TechReports() {
+export function TechReports({ basePath = "/technician/reports" }: { basePath?: string }) {
   const store = useStore();
-  const { visibleReports, groupName, reportItems, reportTotal } = store;
+  const { user, visibleReports, groupName, reportItems, reportTotal } = store;
   const [tab, setTab] = React.useState("all");
   const list = useMemo(() => {
-    let l = visibleReports().filter((r) => r.reportType === "work_report");
+    let l = visibleReports().filter((r) => r.reportType === "work_report" && r.userId === user?.id);
     if (tab === "pending") l = l.filter((r) => PENDING.includes(r.status));
     if (tab === "approved") l = l.filter((r) => r.status === "approved" || r.status === "settled");
     if (tab === "failed") l = l.filter((r) => ["rejected", "redo_requested", "disputed"].includes(r.status));
     return [...l].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [visibleReports, tab]);
+  }, [visibleReports, tab, user]);
 
   const counts = useMemo(() => {
-    const all = visibleReports().filter((r) => r.reportType === "work_report");
+    const all = visibleReports().filter((r) => r.reportType === "work_report" && r.userId === user?.id);
     return {
       pending: all.filter((r) => PENDING.includes(r.status)).length,
       approved: all.filter((r) => r.status === "approved" || r.status === "settled").length,
       failed: all.filter((r) => ["rejected", "redo_requested", "disputed"].includes(r.status)).length,
     };
-  }, [visibleReports]);
+  }, [visibleReports, user]);
 
   return (
     <div>
@@ -131,11 +131,11 @@ export function TechReports() {
         ))}
       </div>
       {list.length === 0 ? (
-        <Card><EmptyState icon={<ClipboardList size={28} />} title="گزارشی نیست" body="گزارش جدیدی با دکمه زیر بسازید." action={<Button variant="soft" icon={<Zap size={16} />} onClick={() => nav("/technician/reports/new")}>ثبت گزارش سریع</Button>} /></Card>
+        <Card><EmptyState icon={<ClipboardList size={28} />} title="گزارشی نیست" body="گزارش جدیدی با دکمه زیر بسازید." action={<Button variant="soft" icon={<Zap size={16} />} onClick={() => nav(`${basePath}/new`)}>ثبت گزارش سریع</Button>} /></Card>
       ) : (
         <div className="stagger space-y-2.5">
           {list.map((r) => (
-            <Card key={r.id} onClick={() => nav(`/technician/reports/${r.id}`)}>
+            <Card key={r.id} onClick={() => nav(`${basePath}/${r.id}`)}>
               <div className="flex items-center gap-3">
                 <span className="tnum flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-primary-50 text-[13px] font-black text-primary-700">{faDigits(reportItems(r.id).length)}</span>
                 <div className="min-w-0 flex-1">
@@ -297,6 +297,17 @@ export function SupervisorHome() {
           </div>
         </div>
         <Button onClick={() => nav("/supervisor/reviews")}>شروع بررسی</Button>
+      </Card>
+
+      <Card className="anim-fade-up mb-4 flex flex-wrap items-center justify-between gap-3 border-dashed border-ink-200 bg-white">
+        <div className="flex items-center gap-3">
+          <span className="anim-bolt flex h-11 w-11 items-center justify-center rounded-[14px] bg-ink-900 text-white"><Zap size={20} fill="currentColor" strokeWidth={1.5} /></span>
+          <div>
+            <p className="text-[14px] font-black text-ink-900">ثبت گزارش کار شخصی</p>
+            <p className="mt-0.5 text-[12px] font-bold text-ink-400">اگر خودتان کاری انجام دادید، مانند کارشناسان گزارش کنید — یا به نام یکی از نیروهای گروه ثبت کنید.</p>
+          </div>
+        </div>
+        <Button variant="outline" onClick={() => nav("/supervisor/reports/new")}>ثبت گزارش</Button>
       </Card>
 
       <div className="mb-4 flex flex-wrap gap-2">

@@ -43,15 +43,16 @@ export function ReviewsList({ scope, title, subtitle }: { scope: Scope; title: s
 
   const list = useMemo(() => {
     let l = visibleReports().filter((r) => r.reportType === "work_report");
+    if (scope === "supervisor") l = l.filter((r) => r.userId !== user?.id);
     if (tab === "queue") l = l.filter((r) => scopeQueueStatus[scope].includes(r.status));
     if (tab === "approved") l = l.filter((r) => r.status === "approved" || r.status === "settled");
     if (tab === "failed") l = l.filter((r) => ["rejected", "redo_requested", "disputed"].includes(r.status));
     if (groupF) l = l.filter((r) => r.groupId === groupF);
     if (q.trim()) l = l.filter((r) => userName(r.userId).includes(q.trim()) || groupName(r.groupId).includes(q.trim()));
     return l.sort((a, b) => (b.submittedAt || b.createdAt).localeCompare(a.submittedAt || a.createdAt));
-  }, [visibleReports, tab, groupF, q, userName, groupName, scope]);
+  }, [visibleReports, tab, groupF, q, userName, groupName, scope, user]);
 
-  const queueCount = useMemo(() => visibleReports().filter((r) => r.reportType === "work_report" && scopeQueueStatus[scope].includes(r.status)).length, [visibleReports, scope]);
+  const queueCount = useMemo(() => visibleReports().filter((r) => r.reportType === "work_report" && scopeQueueStatus[scope].includes(r.status) && !(scope === "supervisor" && r.userId === user?.id)).length, [visibleReports, scope, user]);
 
   if (!user) return null;
 
@@ -183,9 +184,10 @@ export function ReviewDetail({ id, backPath }: { id: string; backPath: string })
   const total = reportTotal(id);
   const isReporter = r.userId === user.id;
   const canAct =
-    (user.role === "GROUP_SUPERVISOR" && r.status === "supervisor_review") ||
+    !isReporter &&
+    ((user.role === "GROUP_SUPERVISOR" && r.status === "supervisor_review") ||
     (user.role === "EMPLOYER_EXPERT" && r.status === "expert_review") ||
-    (user.role === "EMPLOYER_CEO" && r.status === "employer_ceo_review");
+    (user.role === "EMPLOYER_CEO" && r.status === "employer_ceo_review"));
 
   const act = (action: "approve" | "reject" | "redo" | "dispute", reason?: string) => {
     setActing(true);

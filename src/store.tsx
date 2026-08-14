@@ -143,19 +143,22 @@ function audit(d: DB, actor: User, action: string, entity: string, entityId: str
 }
 
 function createReportInDb(d: DB, actor: User, input: ReportInput): string {
-  const existing = d.reports.find((r) => r.idempotencyKey === input.idempotencyKey && r.userId === actor.id);
+  const owner = (input.userId ? d.users.find((u) => u.id === input.userId) : undefined) ?? actor;
+  const existing = d.reports.find((r) => r.idempotencyKey === input.idempotencyKey && r.userId === owner.id);
   if (existing) return existing.id;
   const group = input.groupId ? d.groups.find((g) => g.id === input.groupId) : null;
   const id = uid("r");
+  const supervisorOwn = owner.role === "GROUP_SUPERVISOR";
+  const initialStatus: ReportStatus = supervisorOwn ? "expert_review" : "supervisor_review";
   const report: WorkReport = {
-    id, reportType: "work_report", userId: actor.id,
-    companyId: actor.companyId || group?.companyId || "",
+    id, reportType: "work_report", userId: owner.id,
+    companyId: owner.companyId || actor.companyId || group?.companyId || "",
     groupId: input.groupId, contractId: input.contractId,
     unitId: group?.workUnitId || null,
-    reportDateJ: input.reportDateJ, status: "supervisor_review",
+    reportDateJ: input.reportDateJ, status: initialStatus,
     description: input.description, taskReferenceId: input.taskReferenceId || null,
     idempotencyKey: input.idempotencyKey, submittedAt: nowIso(),
-    currentReviewerRole: "GROUP_SUPERVISOR", createdAt: nowIso(),
+    currentReviewerRole: supervisorOwn ? "EMPLOYER_EXPERT" : "GROUP_SUPERVISOR", createdAt: nowIso(),
   };
   d.reports.push(report);
   for (const it of input.items) {
@@ -169,10 +172,20 @@ function createReportInDb(d: DB, actor: User, input: ReportInput): string {
   for (const ph of input.photos) {
     d.attachments.push({ id: uid("at"), reportId: id, kind: "image", fileName: ph.fileName, dataUrl: ph.dataUrl, size: ph.size, createdAt: nowIso() });
   }
-  d.approvalEvents.push({ id: uid("ev"), reportId: id, actorUserId: actor.id, actorRole: actor.role, action: "submit", fromStatus: "draft", toStatus: "supervisor_review", createdAt: nowIso() });
-  audit(d, actor, "ارسال گزارش کار", "report", id, group ? `گروه: ${group.name}` : undefined);
-  const sup = group?.supervisorUserId ? d.users.find((u) => u.id === group.supervisorUserId) : null;
-  if (sup && sup.id !== actor.id) notify(d, sup.id, "گزارش جدید در انتظار بررسی", `${actor.fullName} گزارش کاری ثبت کرد و منتظر بررسی شماست.`, "report", id);
+  d.approvalEvents.push({ id: uid("ev"), reportId: id, actorUserId: actor.id, actorRole: actor.role, action: "submit", fromStatus: "draft", toStatus: initialStatus, createdAt: nowIso() });
+  const onBehalf = owner.id !== actor.id ? ` — به نام: ${owner.fullName}` : "";
+  const directNote = supervisorOwn ? " — گزارش سرپرست: مستقیم به بررسی کارشناس کارفرما" : "";
+  audit(d, actor, "ارسال گزارش کار", "report", id, `${group ? `گروه: ${group.name}` : ""}${onBehalf}${directNote}` || undefined);
+  if (!supervisorOwn) {
+    const sup = group?.supervisorUserId ? d.users.find((u) => u.id === group.supervisorUserId) : null;
+    if (sup && sup.id !== actor.id) notify(d, sup.id, "گزارش جدید در انتظار بررسی", `${owner.fullName} گزارش کاری ثبت کرد و منتظر بررسی شماست.`, "report", id);
+  } else if (group) {
+    const expertIds = d.memberships.filter((m) => m.groupId === group.id && m.membershipType === "employer_expert" && m.isActive).map((m) => m.userId);
+    for (const eid of new Set(expertIds)) {
+      if (eid !== actor.id) notify(d, eid, "گزارش سرپرست گروه در انتظار بررسی", `${owner.fullName} (سرپرست ${group.name}) گزارش کاری ثبت کرد.`, "report", id);
+    }
+  }
+  if (owner.id !== actor.id) notify(d, owner.id, "گزارشی برای شما ثبت شد", `${actor.fullName} یک گزارش کاری به نام شما ارسال کرد.`, "report", id);
   return id;
 }
 
@@ -443,15 +456,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     mutate((d) => {
       const r = d.reports.find((x) => x.id === reportId);
       if (!r || r.userId !== user.id || r.status !== "redo_requested") return;
-      r.status = "supervisor_review";
-      r.currentReviewerRole = "GROUP_SUPERVISOR";
+      const supervisorOwn = user.role === "GROUP_SUPERVISOR";
+      r.status = supervisorOwn ? "expert_review" : "supervisor_review";
+      r.currentReviewerRole = supervisorOwn ? "EMPLOYER_EXPERT" : "GROUP_SUPERVISOR";
       r.updatedAt = nowIso();
       d.reportItems.forEach((i) => { if (i.reportId === reportId && i.status === "redo") i.status = "pending"; });
-      d.approvalEvents.push({ id: uid("ev"), reportId, actorUserId: user.id, actorRole: user.role, action: "resubmit", fromStatus: "redo_requested", toStatus: "supervisor_review", createdAt: nowIso() });
+      d.approvalEvents.push({ id: uid("ev"), reportId, actorUserId: user.id, actorRole: user.role, action: "resubmit", fromStatus: "redo_requested", toStatus: r.status, createdAt: nowIso() });
       audit(d, user, "ارسال مجدد گزارش", "report", reportId);
       const g = d.groups.find((x) => x.id === r.groupId);
-      const sup = g?.supervisorUserId ? d.users.find((u) => u.id === g.supervisorUserId) : null;
-      if (sup) notify(d, sup.id, "گزارش مجدد ارسال شد", `${user.fullName} گزارش را اصلاح و دوباره ارسال کرد.`, "report", reportId);
+      if (supervisorOwn && g) {
+        const expertIds = d.memberships.filter((m) => m.groupId === g.id && m.membershipType === "employer_expert" && m.isActive).map((m) => m.userId);
+        for (const eid of new Set(expertIds)) if (eid !== user.id) notify(d, eid, "گزارش مجدد سرپرست ارسال شد", `${user.fullName} گزارش را اصلاح و دوباره ارسال کرد.`, "report", reportId);
+      } else {
+        const sup = g?.supervisorUserId ? d.users.find((u) => u.id === g.supervisorUserId) : null;
+        if (sup && sup.id !== user.id) notify(d, sup.id, "گزارش مجدد ارسال شد", `${user.fullName} گزارش را اصلاح و دوباره ارسال کرد.`, "report", reportId);
+      }
     });
     toast("گزارش مجدداً برای بررسی ارسال شد", "success");
   }, [user, mutate, toast]);

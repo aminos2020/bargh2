@@ -70,7 +70,7 @@ export const ROLE_MORE: Record<Role, NavItem[]> = {
     { key: "purchase-requests", label: "درخواست‌های خرید", icon: <ShoppingCart size={19} /> },
     { key: "sync-status", label: "همگام‌سازی آفلاین", icon: <RefreshCw size={19} /> },
   ],
-  GROUP_SUPERVISOR: [],
+  GROUP_SUPERVISOR: [{ key: "reports", label: "گزارش‌های من", icon: <FileText size={19} /> }],
   EMPLOYER_EXPERT: [],
   EMPLOYER_CEO: [
     { key: "tasks", label: "کارهای محوله", icon: <ListTodo size={19} /> },
